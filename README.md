@@ -1,3 +1,5 @@
+![Banner](banner.png)
+
 # file-external-reference-checker
 Identifies and validates external file references (e.g., links, imports, includes) within a file against a list of known safe origins. - Focused on File operations and analysis
 
