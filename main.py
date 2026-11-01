@@ -57,6 +57,10 @@ def validate_origin(url, safe_origins):
     """
     try:
         parsed_url = urlparse(url)
+        # A reference with no host is a relative path and is treated as safe by
+        # definition here: it resolves against the page's own origin, whichever
+        # that is. A protocol-relative reference does carry a host, so it goes
+        # through the real check below.
         if not parsed_url.netloc:  # Handle relative paths - consider them potentially safe if no origin is specified
             return True
         return _origin_matches(parsed_url, safe_origins)
@@ -89,11 +93,20 @@ def _origin_matches(parsed_url, safe_origins):
         return True
     scheme = (parsed_url.scheme or "").lower()
     try:
+        # Reading .port raises ValueError on a malformed port, and that is
+        # treated as an unsafe reference rather than a parse problem. A URL
+        # whose port cannot be read should not sail through a safety check.
         explicit_port = parsed_url.port
     except ValueError:
         return False
     effective_port = explicit_port if explicit_port is not None else DEFAULT_PORTS.get(scheme)
     for origin in safe_origins:
+    # Host matching is exact. A safe origin of example.com does not cover
+    # cdn.example.com; subdomains have to be listed themselves. Ports are
+    # normalised before comparing: a reference with no port counts as its
+    # scheme's default, a safe origin with a scheme and no port means that
+    # scheme's default, and a safe origin with an explicit port matches
+    # only that port.
         safe_host, safe_scheme, safe_port = _parsed_origin(origin)
         if safe_host != host:
             continue
@@ -137,11 +150,20 @@ def find_external_references(filepath, reference_patterns):
             continue
         if "srcset" in pattern:
             for match in matches:
+                # srcset values are comma separated candidate lists, and each entry's
+                # first token is the URL, the rest is a width or density descriptor.
+                # A data URI in a srcset contains commas of its own and gets split at
+                # them; the fragments then fail or pass as relative references.
                 for entry in match.split(","):
                     entry = entry.strip()
                     if entry:
                         references.append(entry.split()[0])
         else:
+            # References are collected pattern by pattern and never deduplicated.
+            # The same URL found by two patterns is reported twice, and the counts
+            # in main describe pattern hits, not distinct references. A custom
+            # pattern with more than one group makes findall return tuples, which
+            # then fail origin parsing and are reported unsafe.
             references.extend(matches)
     return references
 
